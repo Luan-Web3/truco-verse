@@ -3,6 +3,8 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 
+import { cards } from "./data/cards";
+
 const app = express();
 const server = http.createServer(app);
 
@@ -48,9 +50,9 @@ io.on("connection", (socket) => {
 
     // Gera 6 cartas únicas
     const allCards = getRandomUniqueNumbers(7, 0, 39);
-    const playerACards = allCards.slice(0, 3);
-    const playerBCards = allCards.slice(3, 6);
-    const upturnedCard = allCards[6];
+    const playerACards = allCards.slice(0, 3).map((cardIndex) => cards[cardIndex]);
+    const playerBCards = allCards.slice(3, 6).map((cardIndex) => cards[cardIndex]);
+    const upturnedCard = cards[allCards[6]];
 
     // Envia as cartas para o jogador A
     io.to(playerAId).emit("receive_cards", playerACards);
