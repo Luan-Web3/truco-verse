@@ -53,10 +53,19 @@ export default function GamePage() {
             setMessages((prev) => [...prev, `${player} saiu da sala`]);
         });
 
+        // Listener: quando os dados da rodada são enviados
+        // TODO: teste
+        socket.on("round_data", (data) => {
+          console.log(data);
+        });
+
         return () => {
             socket.off("player_joined");
             socket.off("card_played");
             socket.off("player_left");
+            socket.off("round_data");
+            socket.off("upturned_card");
+            socket.off("receive_cards");
         };
     }, []);
 
@@ -68,8 +77,13 @@ export default function GamePage() {
         socket.emit("start_game", room);
     };
 
-    const playCard = () => {
-        socket.emit("play_card", { roomId: room, player: socket.id, card: "Ás de Espadas" });
+    const getRoundData = () => {
+        socket.emit("get_round_data", room);
+    };
+
+    const playCard = (card: Card) => {
+        console.log(card);
+        socket.emit("play_card", room, card);
     };
 
     const leaveGame = () => {
@@ -88,6 +102,9 @@ export default function GamePage() {
           <button onClick={leaveGame} className="m-2 px-4 py-2 bg-red-600 text-white rounded-lg">
             Sair da sala
           </button>
+          <button onClick={getRoundData} className="m-2 px-4 py-2 bg-yellow-600 text-white rounded-lg">
+            Buscar dados da rodada
+          </button>
 
           {upturnedCard && (
             <section>
@@ -105,7 +122,7 @@ export default function GamePage() {
 
           <section className="flex justify-center">
             {cards.map((card) => (
-              <div key={card.slug} className="flex flex-col items-center transition delay-100 duration-200 ease-in-out hover:-translate-y-4 cursor-pointer  ">
+              <div key={card.slug} className="flex flex-col items-center transition delay-100 duration-200 ease-in-out hover:-translate-y-4 cursor-pointer" onClick={() => playCard(card)}>
                 <Image
                   src={card.image}
                   alt={card.slug}

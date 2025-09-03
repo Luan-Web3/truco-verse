@@ -11,7 +11,6 @@ services:
       - REDIS_PORT=6379
     depends_on:
       - redis
-
   client:
     build: ./client
     container_name: truco-client
@@ -19,6 +18,10 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://server:4000
+    volumes:
+      - ./client:/app          # monta código local
+      - /app/node_modules      # evita sobrescrever node_modules do container
+    command: npm run dev       # garante hot-reload do Next
     depends_on:
       - server
 

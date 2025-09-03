@@ -4,8 +4,12 @@ import { Server } from "socket.io";
 
 import { cards } from "./data/cards";
 
+import client, { connectRedis } from "./redisClient";
+
 const app = express();
 const server = http.createServer(app);
+
+connectRedis();
 
 // Configuração do socket
 const io = new Server(server, {
@@ -35,7 +39,7 @@ io.on("connection", (socket) => {
   });
 
   // Novo evento: iniciar o jogo e dar as cartas
-  socket.on("start_game", (roomId: string) => {
+  socket.on("start_game", async (roomId: string) => {
     const room = io.sockets.adapter.rooms.get(roomId);
     if (!room || room.size !== 2) {
       console.log(`Não há 2 jogadores na sala ${roomId} para iniciar o jogo.`);
@@ -47,11 +51,24 @@ io.on("connection", (socket) => {
     const playerAId = playerIds[0];
     const playerBId = playerIds[1];
 
-    // Gera 6 cartas únicas
+    // Gera 7 cartas únicas
     const allCards = getRandomUniqueNumbers(7, 0, 39);
     const playerACards = allCards.slice(0, 3).map((cardIndex) => cards[cardIndex]);
     const playerBCards = allCards.slice(3, 6).map((cardIndex) => cards[cardIndex]);
     const upturnedCard = cards[allCards[6]];
+
+    await client.hSet(`truco:round:${roomId}`, {
+      [`cardPlayed:${playerAId}`]: JSON.stringify(playerACards),
+      [`cardPlayed:${playerBId}`]: JSON.stringify(playerBCards),
+      [`lastCardPlayed:${playerAId}`]: "",
+      [`lastCardPlayed:${playerBId}`]: "",
+      [`turnWinner:${playerAId}`]: 0,
+      [`turnWinner:${playerBId}`]: 0,
+      upturnedCard: JSON.stringify(upturnedCard),
+      turn: playerAId,  // TODO: implementar a lógica de turno
+      playedCardCount: 0,
+    });
+    
 
     // Envia as cartas para o jogador A
     io.to(playerAId).emit("receive_cards", playerACards);
@@ -69,17 +86,49 @@ io.on("connection", (socket) => {
     // io.to(roomId).emit("game_started");
   });
 
+  socket.on("get_round_data", async (roomId: string) => {
+    const roundData = await client.hGetAll(`truco:round:${roomId}`);
+    io.to(roomId).emit("round_data", roundData);
+    console.log(`Dados da rodada enviados para a sala ${roomId}:`, roundData);
+  });
+
   // Evento customizado: jogada
-  socket.on("play_card", (data) => {
+  socket.on("play_card", async (roomId, card) => {
     const rooms = Array.from(socket.rooms); // salas em que o socket está
   
-    if (!rooms.includes(data.roomId)) {
-      console.log(`Socket ${socket.id} tentou jogar fora da sala ${data.roomId}`);
+    if (!rooms.includes(roomId)) {
+      console.log(`Socket ${socket.id} tentou jogar fora da sala ${roomId}`);
       return; // ignora
     }
-  
-    io.to(data.roomId).emit("card_played", data);
-    console.log("Jogada recebida:", data);
+
+    const roundData = await client.hGetAll(`truco:round:${roomId}`);
+    const turn = roundData[`turn`];
+
+    if (turn !== socket.id) {
+      console.log(`Socket ${socket.id} tentou jogar fora do turno ${turn}`);
+      io.to(roomId).emit("game_error", "Aguardando o próximo turno...");
+      return;
+    }
+
+    const room = io.sockets.adapter.rooms.get(roomId);
+    if (!room || room.size !== 2) {
+      console.log(`Não há 2 jogadores na sala ${roomId} para iniciar o jogo.`);
+      socket.emit("game_error", "Aguardando outro jogador...");
+      return;
+    }
+
+    const playerIds = Array.from(room);
+    const playerAId = playerIds[0];
+    const playerBId = playerIds[1];
+
+    await client.hSet(`truco:round:${roomId}`, {
+      [`lastCardPlayed:${turn}`]: JSON.stringify(card),
+      playedCardCount: parseInt(roundData[`playedCardCount`]) + 1,
+      turn: turn === playerAId ? playerBId : playerAId,
+    });
+
+    io.to(roomId).emit("card_played", { player: turn, card: card });
+    console.log("Jogada recebida:", card);
   });
 
   // Evento customizado: jogador saiu
